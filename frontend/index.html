@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Crime Report Generator - UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f5f6fa; }
+    header { background: #111827; color: white; padding: 14px 18px; }
+    .container { max-width: 980px; margin: 18px auto; padding: 0 14px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .card { background: white; border-radius: 10px; padding: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.06); }
+    .card h2 { margin: 0 0 10px; font-size: 18px; }
+    label { display: block; font-size: 12px; margin: 8px 0 4px; color: #374151; }
+    input, select, textarea {
+      width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; outline: none;
+      box-sizing: border-box;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      margin-top: 10px; padding: 10px 12px; border: 0; border-radius: 8px;
+      background: #2563eb; color: white; cursor: pointer; font-weight: 600;
+    }
+    button.secondary { background: #6b7280; }
+    .row { display: flex; gap: 10px; }
+    .row > * { flex: 1; }
+    .status { margin-top: 10px; font-size: 13px; }
+    .ok { color: #047857; }
+    .bad { color: #b91c1c; }
+    pre {
+      background: #0b1020; color: #e5e7eb; padding: 12px; border-radius: 10px;
+      overflow: auto; max-height: 320px;
+    }
+    .small { font-size: 12px; color: #6b7280; margin-top: 6px; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Crime Report Generator</strong> — Basic Frontend UI
+  </header>
+
+  <div class="container">
+    <div class="grid">
+
+      <!-- LOGIN -->
+      <div class="card">
+        <h2>1) Login</h2>
+        <div class="small">Calls: <code>POST /users/login</code></div>
+
+        <label>Name (or Email)</label>
+        <input id="loginName" placeholder="e.g. m" />
+
+        <label>Password</label>
+        <input id="loginPassword" type="password" placeholder="e.g. 123" />
+
+        <button onclick="login()">Login</button>
+
+        <div class="status" id="loginStatus"></div>
+
+        <label>Logged in User ID</label>
+        <input id="userId" placeholder="User ID will appear here" readonly />
+      </div>
+
+      <!-- CREATE CASE -->
+      <div class="card">
+        <h2>2) Create Case</h2>
+        <div class="small">
+          Calls: <code>POST /cases/?user_id=...</code> + JSON body
+        </div>
+
+        <label>Title</label>
+        <input id="title" placeholder="e.g. Mobile Theft" />
+
+        <label>Description</label>
+        <textarea id="description" placeholder="Write details..."></textarea>
+
+        <div class="row">
+          <div>
+            <label>Location</label>
+            <input id="location" placeholder="e.g. Ahmedabad" />
+          </div>
+          <div>
+            <label>Crime Type</label>
+            <input id="crime_type" placeholder="e.g. Theft" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Severity</label>
+            <select id="severity">
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div>
+            <label>Date Reported</label>
+            <input id="date_reported" type="datetime-local"/>
+          </div>
+        </div>
+
+        <button onclick="createCase()">Create Case</button>
+        <div class="status" id="caseStatus"></div>
+      </div>
+
+      <!-- GET CASES -->
+      <div class="card">
+        <h2>3) View Cases</h2>
+        <div class="small">Calls: <code>GET /cases/</code>, <code>GET /cases/by-user</code>, <code>GET /cases/{id}</code></div>
+
+        <div class="row">
+          <button class="secondary" onclick="getAllCases()">Get All Cases</button>
+          <button class="secondary" onclick="getCasesByUser()">Get My Cases</button>
+        </div>
+
+        <label>Get Case By ID</label>
+        <div class="row">
+          <input id="caseId" placeholder="e.g. 1" />
+          <button class="secondary" onclick="getCaseById()">Get</button>
+        </div>
+
+        <div class="status" id="getStatus"></div>
+      </div>
+
+      <!-- OUTPUT -->
+      <div class="card">
+        <h2>Output</h2>
+        <pre id="output">{}</pre>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000"; // change if your backend runs elsewhere
+
+    function show(elId, msg, ok=true){
+      const el = document.getElementById(elId);
+      el.className = "status " + (ok ? "ok" : "bad");
+      el.textContent = msg;
+    }
+
+    function setOutput(data){
+      document.getElementById("output").textContent =
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    }
+
+    // If date is empty, set to now
+    function getDateReportedISO(){
+      const v = document.getElementById("date_reported").value;
+      if(!v){
+        const now = new Date();
+        return now.toISOString();
+      }
+      // datetime-local gives "YYYY-MM-DDTHH:mm"
+      // Convert to ISO string (local -> UTC-ish). Backend accepts ISO.
+      return new Date(v).toISOString();
+    }
+
+    async function login(){
+      try {
+        const name = document.getElementById("loginName").value.trim();
+        const password = document.getElementById("loginPassword").value.trim();
+
+        if(!name || !password){
+          show("loginStatus", "Please enter name/email and password.", false);
+          return;
+        }
+
+        // Your backend currently uses query params for login:
+        // POST /users/login?name=...&password=...
+        const url = `${API_BASE}/users/login?name=${encodeURIComponent(name)}&password=${encodeURIComponent(password)}`;
+        const res = await fetch(url, { method: "POST" });
+
+        const data = await res.json().catch(() => ({}));
+
+        if(!res.ok){
+          show("loginStatus", data.detail || "Login failed.", false);
+          setOutput(data);
+          return;
+        }
+
+        // Expecting: { message, user_id, name }
+        document.getElementById("userId").value = data.user_id ?? "";
+        show("loginStatus", `✅ ${data.message} (User ID: ${data.user_id})`, true);
+        setOutput(data);
+
+      } catch (e){
+        show("loginStatus", "Server not reachable. Is FastAPI running?", false);
+        setOutput(String(e));
+      }
+    }
+
+    async function createCase(){
+      try {
+        const userId = document.getElementById("userId").value.trim();
+        if(!userId){
+          show("caseStatus", "Please login first so we have user_id.", false);
+          return;
+        }
+
+        const payload = {
+          title: document.getElementById("title").value.trim(),
+          description: document.getElementById("description").value.trim(),
+          location: document.getElementById("location").value.trim(),
+          crime_type: document.getElementById("crime_type").value.trim(),
+          severity: document.getElementById("severity").value,
+          date_reported: getDateReportedISO()
+        };
+
+        // Basic validation
+        for (const k of ["title","description","location","crime_type","severity","date_reported"]){
+          if(!payload[k]){
+            show("caseStatus", `Missing field: ${k}`, false);
+            return;
+          }
+        }
+
+        const url = `${API_BASE}/cases/?user_id=${encodeURIComponent(userId)}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if(!res.ok){
+          show("caseStatus", data.detail || "Create case failed.", false);
+          setOutput(data);
+          return;
+        }
+
+        show("caseStatus", "✅ Case created successfully!", true);
+        setOutput(data);
+
+      } catch (e){
+        show("caseStatus", "Server not reachable. Is FastAPI running?", false);
+        setOutput(String(e));
+      }
+    }
+
+    async function getAllCases(){
+      try {
+        const res = await fetch(`${API_BASE}/cases/`);
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok){
+          show("getStatus", data.detail || "Failed to fetch cases.", false);
+          setOutput(data);
+          return;
+        }
+        show("getStatus", `✅ Fetched ${Array.isArray(data) ? data.length : 0} case(s)`, true);
+        setOutput(data);
+      } catch(e){
+        show("getStatus", "Server not reachable.", false);
+        setOutput(String(e));
+      }
+    }
+
+    async function getCasesByUser(){
+      try {
+        const userId = document.getElementById("userId").value.trim();
+        if(!userId){
+          show("getStatus", "Please login first so we have user_id.", false);
+          return;
+        }
+        const res = await fetch(`${API_BASE}/cases/by-user?user_id=${encodeURIComponent(userId)}`);
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok){
+          show("getStatus", data.detail || "Failed to fetch user cases.", false);
+          setOutput(data);
+          return;
+        }
+        show("getStatus", `✅ Fetched ${Array.isArray(data) ? data.length : 0} case(s) for user ${userId}`, true);
+        setOutput(data);
+      } catch(e){
+        show("getStatus", "Server not reachable.", false);
+        setOutput(String(e));
+      }
+    }
+
+    async function getCaseById(){
+      try {
+        const id = document.getElementById("caseId").value.trim();
+        if(!id){
+          show("getStatus", "Enter case_id first.", false);
+          return;
+        }
+        const res = await fetch(`${API_BASE}/cases/${encodeURIComponent(id)}`);
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok){
+          show("getStatus", data.detail || "Case not found / fetch failed.", false);
+          setOutput(data);
+          return;
+        }
+        show("getStatus", `✅ Fetched case ${id}`, true);
+        setOutput(data);
+      } catch(e){
+        show("getStatus", "Server not reachable.", false);
+        setOutput(String(e));
+      }
+    }
+  </script>
+</body>
+</html>

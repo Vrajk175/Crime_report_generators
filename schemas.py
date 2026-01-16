@@ -13,7 +13,7 @@ class UserResponse(BaseModel):
     email: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # -------- CASE --------
@@ -36,4 +36,4 @@ class CaseResponse(BaseModel):
     user_id: int
     created_at: datetime
     class Config:
-        orm_mode = True
+        from_attributes = True
